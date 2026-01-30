@@ -1,11 +1,19 @@
-import pickle
-from collections import defaultdict
-import numpy as np
+"""Generate augmented user-item interactions for a dataset."""
+
 import argparse
+from collections import defaultdict
 import os
+import pickle
+
+import numpy as np
 import torch
 
 def parse_args():
+    """Parse CLI arguments for augmentation.
+
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_name", type=str, default='Appliances')
     parser.add_argument("--aug_num", type=int, default=1) # for each user, add this number of interactions
@@ -14,6 +22,14 @@ def parse_args():
     return parser.parse_args()
 
 def seed_everything(seed):
+    """Seed numpy and torch RNGs for reproducibility.
+
+    Args:
+        seed (int): Random seed value.
+
+    Returns:
+        None
+    """
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)

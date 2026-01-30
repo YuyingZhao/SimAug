@@ -1,16 +1,29 @@
-from sentence_transformers import SentenceTransformer
+"""Compute sentence-transformer embeddings for item titles."""
+
 import argparse
 import pickle
-import torch
+
 import numpy as np
+from sentence_transformers import SentenceTransformer
+import torch
 
 def parse_args():
+    """Parse CLI arguments for embedding generation.
+
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_name", type=str)
     parser.add_argument("--flag", type=str, default="6")
     return parser.parse_args()
 
 def main():
+    """Run embedding generation for the selected dataset and model size.
+
+    Returns:
+        None
+    """
     args = parse_args()
     if args.flag == "6":
         model_path = "all-MiniLM-L6-v2"

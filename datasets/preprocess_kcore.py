@@ -1,20 +1,36 @@
-import json
-import pickle
-import gzip
-from collections import defaultdict
-import numpy as np
+"""Preprocess Amazon Reviews data into k-core splits and labels."""
+
 import argparse
+from collections import defaultdict
+import gzip
+import json
 import os
-import pandas as pd
+import pickle
 import random
 
+import numpy as np
+import pandas as pd
+
 def parse_args():
+    """Parse CLI arguments for preprocessing.
+
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_name", type=str, default='Appliances')
     parser.add_argument("--kcore_num", type=int, default=5)
     return parser.parse_args()
 
 def non_repeated_items(args):
+    """Filter items to those with unique titles.
+
+    Args:
+        args: Parsed CLI args with dataset_name.
+
+    Returns:
+        dict: Mapping from item_id to title for unique-title items.
+    """
     meta_filename = './{}/src/meta_{}.jsonl.gz'.format(args.dataset_name, args.dataset_name)
     
     title_to_id = defaultdict(list)
@@ -33,6 +49,15 @@ def non_repeated_items(args):
     return id_to_title
 
 def load_edge_list(args, item_subset):
+    """Load user-item edges with positive ratings and filtered items.
+
+    Args:
+        args: Parsed CLI args with dataset_name.
+        item_subset (set): Allowed item ids.
+
+    Returns:
+        list: List of [user_id, item_id] edges.
+    """
     edges = []
     dataset_name = args.dataset_name
     with gzip.open('./{}/src/{}.csv.gz'.format(dataset_name, dataset_name), 'rt') as file:
@@ -48,6 +73,15 @@ def load_edge_list(args, item_subset):
     return edges
 
 def kcore(edges, kcore_num):
+    """Apply k-core filtering to bipartite edges.
+
+    Args:
+        edges (list): List of [user_id, item_id] edges.
+        kcore_num (int): Minimum degree threshold.
+
+    Returns:
+        list: Filtered edges.
+    """
     src_degree = defaultdict(int)
     target_degree = defaultdict(int)
 
@@ -67,6 +101,14 @@ def kcore(edges, kcore_num):
     return new_edges
 
 def categorize_items(ratings_dict): 
+    """Split items into short-head and long-tail by cumulative ratings.
+
+    Args:
+        ratings_dict (dict): Mapping item_id to interaction count.
+
+    Returns:
+        tuple: (short_head_set, long_tail_set)
+    """
     # input is a dict with item as key and the number of interactions as value
     total_ratings = sum(ratings_dict.values())    
     sorted_items = sorted(ratings_dict.items(), key=lambda x: x[1], reverse=True)    
@@ -83,6 +125,14 @@ def categorize_items(ratings_dict):
     return set(short_head), set(long_tail)
 
 def group_label_assignment(train_edges):
+    """Assign popularity/activity labels based on training edges.
+
+    Args:
+        train_edges (list): List of [user_id, item_id] edges.
+
+    Returns:
+        tuple: (short_head, long_tail, active, inactive) as sets.
+    """
     # Group Label Assignment: assign user labels of active/inactive and item labels of popular and unpopular
     item_interaction_dict = defaultdict(int)
     user_interaction_dict = defaultdict(int)
@@ -111,6 +161,15 @@ def group_label_assignment(train_edges):
     return short_head, long_tail, active, inactive
 
 def save_pickle(filename, obj):
+    """Serialize an object to disk with pickle.
+
+    Args:
+        filename (str): Output file path.
+        obj: Python object to serialize.
+
+    Returns:
+        None
+    """
     with open(filename, 'wb') as file:
         pickle.dump(obj, file)
 

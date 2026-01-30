@@ -1,3 +1,5 @@
+"""Training entry point for recommendation models."""
+
 import os
 from parse import parse_args
 from torch.utils.data import DataLoader
@@ -10,6 +12,20 @@ from dataprocess import *
 
 
 def run(model, optimizer, train_cf, clicked_set, user_dict, adj, args):
+    """Train and validate a model with early stopping.
+
+    Args:
+        model (torch.nn.Module): Recommendation model.
+        optimizer (torch.optim.Optimizer): Optimizer for training.
+        train_cf (np.ndarray): Training user-item edges.
+        clicked_set (dict): User-to-clicked items mapping.
+        user_dict (dict): Train/val/test user sets.
+        adj (torch.Tensor): Edge index for adjacency.
+        args (argparse.Namespace): Parsed arguments.
+
+    Returns:
+        None
+    """
     test_recall_best, early_stop_count = -float('inf'), 0
 
     adj_sp_norm, deg = normalize_edge(adj, args.n_users, args.n_items)

@@ -1,13 +1,26 @@
-import numpy as np
+"""Utility functions for training and evaluation."""
+
+import os
 import random
+
+import numpy as np
 import torch
 from torch import nn
-from torch_scatter import scatter_max, scatter_add
+from torch_scatter import scatter_add, scatter_max
 import matplotlib.pyplot as plt
-import os
 
 
 def neg_sample_before_epoch(train_cf, clicked_set, args):
+    """Sample negative items for each training edge.
+
+    Args:
+        train_cf (np.ndarray): Training edges.
+        clicked_set (dict): User-to-clicked items mapping.
+        args (argparse.Namespace): Parsed arguments.
+
+    Returns:
+        np.ndarray: Negative samples per training edge.
+    """
     neg_cf = np.random.randint(
         args.n_users, args.n_users + args.n_items, (train_cf.shape[0], args.K))
 
@@ -24,6 +37,15 @@ def neg_sample_before_epoch(train_cf, clicked_set, args):
 
 
 def batch_to_gpu(batch, device):
+    """Move a batch dict of tensors to a device.
+
+    Args:
+        batch (dict): Batch tensor dictionary.
+        device (torch.device): Target device.
+
+    Returns:
+        dict: Batch on target device.
+    """
     for c in batch:
         batch[c] = batch[c].to(device)
 
@@ -31,6 +53,14 @@ def batch_to_gpu(batch, device):
 
 
 def seed_everything(seed):
+    """Seed Python, NumPy, and PyTorch RNGs.
+
+    Args:
+        seed (int): Random seed.
+
+    Returns:
+        None
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -40,6 +70,15 @@ def seed_everything(seed):
 
 
 def minibatch(*tensors, batch_size):
+    """Yield minibatches from one or more tensors.
+
+    Args:
+        *tensors: One or more tensors or arrays with matching length.
+        batch_size (int): Batch size.
+
+    Yields:
+        tuple or array: Minibatch slice(s).
+    """
     if len(tensors) == 1:
         tensor = tensors[0]
         for i in range(0, len(tensor), batch_size):
@@ -50,6 +89,15 @@ def minibatch(*tensors, batch_size):
 
 
 def knn_adj(adj_sp_norm, args):
+    """Build a k-NN filtered adjacency from a dense adjacency.
+
+    Args:
+        adj_sp_norm (torch.Tensor): Sparse adjacency.
+        args (argparse.Namespace): Parsed arguments with knn.
+
+    Returns:
+        torch.sparse.FloatTensor: Filtered adjacency.
+    """
     adj_sp_norm = adj_sp_norm.to_dense()
     top_adj_sp_norm, _ = torch.topk(adj_sp_norm, args.knn)
     low, high = top_adj_sp_norm[:, -1], top_adj_sp_norm[:, 0]
@@ -66,6 +114,15 @@ def knn_adj(adj_sp_norm, args):
 
 
 def ratio(train_cf, n_users):
+    """Compute per-edge inverse user degree ratios.
+
+    Args:
+        train_cf (np.ndarray): Training edges.
+        n_users (int): Number of users.
+
+    Returns:
+        torch.Tensor: Ratios indexed by edges.
+    """
     user_link_num = torch.tensor(
         [(train_cf[:, 0] == i).sum() for i in range(n_users)])
 
@@ -76,6 +133,17 @@ def ratio(train_cf, n_users):
 
 
 def cal_bpr_loss(user_embs, pos_item_embs, neg_item_embs, link_ratios=None):
+    """Compute BPR loss.
+
+    Args:
+        user_embs (torch.Tensor): User embeddings.
+        pos_item_embs (torch.Tensor): Positive item embeddings.
+        neg_item_embs (torch.Tensor): Negative item embeddings.
+        link_ratios (torch.Tensor, optional): Unused.
+
+    Returns:
+        torch.Tensor: Scalar loss.
+    """
     pos_scores = torch.sum(torch.mul(user_embs, pos_item_embs), axis=1)
     neg_scores = torch.sum(torch.mul(user_embs.unsqueeze(dim=1), neg_item_embs), axis=-1)
     # modify the loss to the original bpr loss in lightgcn
@@ -84,10 +152,31 @@ def cal_bpr_loss(user_embs, pos_item_embs, neg_item_embs, link_ratios=None):
 
 
 def cal_l2_loss(user_embs, pos_item_embs, neg_item_embs, batch_size):
+    """Compute L2 regularization loss.
+
+    Args:
+        user_embs (torch.Tensor): User embeddings.
+        pos_item_embs (torch.Tensor): Positive item embeddings.
+        neg_item_embs (torch.Tensor): Negative item embeddings.
+        batch_size (int): Batch size.
+
+    Returns:
+        torch.Tensor: Scalar L2 loss.
+    """
     return 0.5 * (user_embs.norm(2).pow(2) + pos_item_embs.norm(2).pow(2) + neg_item_embs.norm(2).pow(2)) / batch_size
 
 
 def softmax(src, index, num_nodes):
+    """Compute sparse softmax over segments.
+
+    Args:
+        src (torch.Tensor): Source values.
+        index (torch.Tensor): Indices for segments.
+        num_nodes (int): Number of nodes.
+
+    Returns:
+        torch.Tensor: Softmax-normalized values.
+    """
     out = src - scatter_max(src, index, dim=0, dim_size=num_nodes)[0][index]
     out = out.exp()
     out = out / (

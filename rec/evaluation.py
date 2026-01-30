@@ -1,12 +1,24 @@
-import numpy as np
-from utils import *
-from collections import defaultdict, Counter
-from sklearn.metrics import roc_auc_score, average_precision_score
+"""Evaluation utilities for recommendation models."""
+
 import pickle
+from collections import Counter, defaultdict
+
+import numpy as np
+from sklearn.metrics import average_precision_score, roc_auc_score
+from utils import *
 
 np.set_printoptions(precision=4)
 
 def getLabel(test_data, pred_data):
+    """Compute binary relevance labels for top-k predictions.
+
+    Args:
+        test_data (list): Ground-truth items per user.
+        pred_data (list): Predicted top-k items per user.
+
+    Returns:
+        np.ndarray: Binary relevance matrix.
+    """
     r = []
 
     for i in range(len(test_data)):
@@ -20,16 +32,30 @@ def getLabel(test_data, pred_data):
 
 
 def Hit_at_k(r, k):
+    """Compute hit ratio at k.
+
+    Args:
+        r (np.ndarray): Binary relevance matrix.
+        k (int): Top-k cutoff.
+
+    Returns:
+        np.ndarray: Hit indicators per user.
+    """
     right_pred = r[:, :k].sum(axis=1)
 
     return 1. * (right_pred > 0)
 
 
 def RecallPrecision_ATk(test_data, r, k):
-    """
-    test_data should be a list? cause users may have different amount of pos items. shape (test_batch, k)
-    pred_data : shape (test_batch, k) NOTE: pred_data should be pre-sorted
-    k : top-k
+    """Compute recall and precision at k.
+
+    Args:
+        test_data (list): Ground-truth items per user.
+        r (np.ndarray): Binary relevance matrix.
+        k (int): Top-k cutoff.
+
+    Returns:
+        dict: Arrays of recall and precision.
     """
     right_pred = r[:, :k].sum(1)
     precis_n = k
@@ -40,9 +66,15 @@ def RecallPrecision_ATk(test_data, r, k):
 
 
 def NDCGatK_r(test_data, r, k):
-    """
-    Normalized Discounted Cumulative Gain
-    rel_i = 1 or 0, so 2^{rel_i} - 1 = 1 or 0
+    """Compute NDCG at k.
+
+    Args:
+        test_data (list): Ground-truth items per user.
+        r (np.ndarray): Binary relevance matrix.
+        k (int): Top-k cutoff.
+
+    Returns:
+        np.ndarray: NDCG values per user.
     """
 
     assert len(r) == len(test_data)
@@ -64,6 +96,15 @@ def NDCGatK_r(test_data, r, k):
 
 
 def test_one_batch(X, topks):
+    """Evaluate metrics for a single batch.
+
+    Args:
+        X (tuple): (sorted_items, groundTruth).
+        topks (list): List of k values.
+
+    Returns:
+        dict: Summed metric values for the batch.
+    """
     sorted_items = X[0].numpy()
     groundTrue = X[1]
 
@@ -95,6 +136,19 @@ def test_one_batch(X, topks):
 
 
 def test(user_embs, item_embs, user_dict, args, flag='val', model=None):
+    """Evaluate a model on validation or test split.
+
+    Args:
+        user_embs (torch.Tensor): User embeddings.
+        item_embs (torch.Tensor): Item embeddings.
+        user_dict (dict): User interaction sets.
+        args (argparse.Namespace): Parsed arguments.
+        flag (str): "val" or "test".
+        model (torch.nn.Module, optional): Model for special scoring.
+
+    Returns:
+        dict: Metric results averaged over users.
+    """
     results = {'Precision': np.zeros(len(args.topks)),
                'Recall': np.zeros(len(args.topks)),
                'NDCG': np.zeros(len(args.topks)),
@@ -172,6 +226,19 @@ def test(user_embs, item_embs, user_dict, args, flag='val', model=None):
     return results
 
 def test_rec_list(user_embs, item_embs, user_dict, args, flag='val', model=None):
+    """Generate top-k recommendation lists without metric computation.
+
+    Args:
+        user_embs (torch.Tensor): User embeddings.
+        item_embs (torch.Tensor): Item embeddings.
+        user_dict (dict): User interaction sets.
+        args (argparse.Namespace): Parsed arguments.
+        flag (str): "val" or "test".
+        model (torch.nn.Module, optional): Model for special scoring.
+
+    Returns:
+        tuple: (users_list, ratings_list)
+    """
     train_user_set = user_dict['train_user_set']
     val_user_set = user_dict['val_user_set']
 
@@ -224,6 +291,17 @@ def test_rec_list(user_embs, item_embs, user_dict, args, flag='val', model=None)
     return users_list, ratings_list
 
 def test_per_user(user_embs, item_embs, user_dict, args):
+    """Compute and save per-user performance statistics.
+
+    Args:
+        user_embs (torch.Tensor): User embeddings.
+        item_embs (torch.Tensor): Item embeddings.
+        user_dict (dict): User interaction sets.
+        args (argparse.Namespace): Parsed arguments.
+
+    Returns:
+        None
+    """
     train_user_set = user_dict['train_user_set']
     val_user_set = user_dict['val_user_set']
     test_user_set = user_dict['test_user_set']
@@ -301,6 +379,17 @@ def test_per_user(user_embs, item_embs, user_dict, args):
         pickle.dump(user_performance_dict, f)
 
 def test_per_item(user_embs, item_embs, user_dict, args):
+    """Compute and save per-item performance statistics.
+
+    Args:
+        user_embs (torch.Tensor): User embeddings.
+        item_embs (torch.Tensor): Item embeddings.
+        user_dict (dict): User interaction sets.
+        args (argparse.Namespace): Parsed arguments.
+
+    Returns:
+        None
+    """
     train_user_set = user_dict['train_user_set']
     val_user_set = user_dict['val_user_set']
     test_user_set = user_dict['test_user_set']
@@ -379,9 +468,28 @@ def test_per_item(user_embs, item_embs, user_dict, args):
         pickle.dump(item_performance_dict, f)
 
 def sigmoid(x):
+    """Compute sigmoid elementwise.
+
+    Args:
+        x (np.ndarray): Input array.
+
+    Returns:
+        np.ndarray: Sigmoid output.
+    """
     return 1 / (1 + np.exp(-x))
 
 def get_roc_score(edges_pos, edges_neg, score_matrix, apply_sigmoid=False):
+    """Compute ROC-AUC and average precision for edge scores.
+
+    Args:
+        edges_pos (list): Positive edges.
+        edges_neg (list): Negative edges.
+        score_matrix (torch.Tensor): Score matrix.
+        apply_sigmoid (bool): Whether to sigmoid scores.
+
+    Returns:
+        tuple: (roc_score, ap_score) or (None, None, None) if invalid.
+    """
     score_matrix = score_matrix.cpu().detach()
     if len(edges_pos) == 0 or len(edges_neg) == 0:
         return (None, None, None)
@@ -413,4 +521,3 @@ def get_roc_score(edges_pos, edges_neg, score_matrix, apply_sigmoid=False):
     ap_score = average_precision_score(labels_all, preds_all)
 
     return roc_score, ap_score
-

@@ -1,6 +1,13 @@
+"""Argument parsing for training and evaluation runs."""
+
 import argparse
 
 def parse_args():
+    """Parse CLI arguments.
+
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
     parser = argparse.ArgumentParser()
 
     # dataset

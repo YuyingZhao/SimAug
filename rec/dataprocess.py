@@ -1,18 +1,38 @@
-import numpy as np
-import torch
+"""Data loading and preprocessing utilities for recommendation training."""
+
 from collections import defaultdict
-from torch.utils.data import Dataset as BaseDataset
-from torch_geometric.utils import add_remaining_self_loops, degree
 import pickle
 
+import numpy as np
+import torch
+from torch.utils.data import Dataset as BaseDataset
+from torch_geometric.utils import add_remaining_self_loops, degree
+
 class Dataset(BaseDataset):
+    """PyTorch dataset for BPR training samples."""
     def __init__(self, users, pos_items, neg_items, args):
+        """Initialize a training dataset.
+
+        Args:
+            users (np.ndarray): User indices.
+            pos_items (np.ndarray): Positive item indices.
+            neg_items (np.ndarray): Negative item indices.
+            args (argparse.Namespace): Parsed arguments.
+        """
         self.users = users
         self.pos_items = pos_items
         self.neg_items = neg_items
         self.args = args
 
     def _get_feed_dict(self, index):
+        """Build a feed dict for a given index.
+
+        Args:
+            index (int): Sample index.
+
+        Returns:
+            dict: Batch dictionary.
+        """
         feed_dict = {
             'users': self.users[index],
             'pos_items': self.pos_items[index],
@@ -21,12 +41,22 @@ class Dataset(BaseDataset):
         return feed_dict
 
     def __len__(self):
+        """Return dataset length."""
         return len(self.users)
 
     def __getitem__(self, index):
+        """Return a single sample."""
         return self._get_feed_dict(index)
 
     def collate_batch(self, feed_dicts):
+        """Collate a list of samples into a batch tensor dict.
+
+        Args:
+            feed_dicts (list): List of sample dicts.
+
+        Returns:
+            dict: Batched tensors.
+        """
         feed_dict = dict()
 
         feed_dict['users'] = torch.LongTensor([d['users'] for d in feed_dicts])
@@ -42,6 +72,16 @@ class Dataset(BaseDataset):
         return feed_dict
 
 def process(train_data, val_data, test_data):
+    """Process raw edges into user/item counts and user/item sets.
+
+    Args:
+        train_data (np.ndarray): Training edges.
+        val_data (np.ndarray): Validation edges.
+        test_data (np.ndarray): Test edges.
+
+    Returns:
+        tuple: (n_users, n_items, train_user_set, val_user_set, test_user_set, train_item_set)
+    """
     n_users = max(max(train_data[:, 0]), max(val_data[:, 0]), max(test_data[:, 0])) + 1
     n_items = max(max(train_data[:, 1]), max(val_data[:, 1]), max(test_data[:, 1])) + 1
 
@@ -62,6 +102,16 @@ def process(train_data, val_data, test_data):
     return n_users, n_items, train_user_set, val_user_set, test_user_set, train_item_set
 
 def process_adj(data_cf, n_users, n_items):
+    """Build a symmetric edge index for a bipartite graph.
+
+    Args:
+        data_cf (np.ndarray): User-item edges.
+        n_users (int): Number of users.
+        n_items (int): Number of items.
+
+    Returns:
+        torch.LongTensor: Edge index for the bipartite graph.
+    """
     cf = data_cf.copy()
     cf[:, 1] = cf[:, 1]  # [0, n_items) -> [n_users, n_users+n_items)
     # note this has been done in process, therefore, no need to do it here
@@ -73,6 +123,14 @@ def process_adj(data_cf, n_users, n_items):
     return torch.LongTensor(cf_).t()
 
 def load_data(args):
+    """Load dataset splits and build auxiliary structures.
+
+    Args:
+        args (argparse.Namespace): Parsed arguments.
+
+    Returns:
+        tuple: (train_cf, val_cf, test_cf, user_dict, n_users, n_items, clicked_set, adj)
+    """
     print('reading train/val/test user-item set ...')
     dataset_file = args.dataset_path + 'preprocessed/edges.pkl'
     with open(dataset_file, 'rb') as file:
@@ -120,6 +178,16 @@ def load_data(args):
 
 
 def normalize_edge(edge_index, n_users, n_items):
+    """Normalize edges by symmetric degree for GCN propagation.
+
+    Args:
+        edge_index (torch.Tensor): Edge index tensor.
+        n_users (int): Number of users.
+        n_items (int): Number of items.
+
+    Returns:
+        tuple: (normalized adjacency sparse tensor, degree tensor)
+    """
     row, col = edge_index
     deg = degree(col)
     deg_inv_sqrt = deg.pow(-0.5)

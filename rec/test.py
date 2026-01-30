@@ -1,3 +1,5 @@
+"""Evaluation entry point and fairness metrics."""
+
 import os
 from parse import parse_args
 import time
@@ -9,6 +11,14 @@ from model import *
 from dataprocess import *
 
 def cal_user_unfairness(args):
+    """Compute unfairness between active and inactive users.
+
+    Args:
+        args (argparse.Namespace): Parsed arguments.
+
+    Returns:
+        tuple: (active_avg, inactive_avg)
+    """
     result_filename = args.per_user_filename
     with open(result_filename, 'rb') as f:
         user_result = pickle.load(f)
@@ -31,6 +41,14 @@ def cal_user_unfairness(args):
     return active_avg, inactive_avg
 
 def cal_item_unfairness(args):
+    """Compute unfairness between popular and unpopular items.
+
+    Args:
+        args (argparse.Namespace): Parsed arguments.
+
+    Returns:
+        tuple: (pop_avg, unpop_avg)
+    """
     result_filename = args.per_item_filename
     with open(result_filename, 'rb') as f:
         item_results = pickle.load(f)

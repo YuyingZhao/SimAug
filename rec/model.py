@@ -1,3 +1,5 @@
+"""Model definitions for recommendation."""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,15 +8,30 @@ from utils import softmax
 
 
 class GraphConv(nn.Module):
-    """
-    Graph Convolutional Network
-    """
+    """Graph convolutional layer stack for LightGCN."""
 
     def __init__(self, args):
+        """Initialize the graph convolution module.
+
+        Args:
+            args (argparse.Namespace): Parsed arguments.
+        """
         super(GraphConv, self).__init__()
         self.args = args
 
     def forward(self, embed, adj_sp_norm, edge_index, edge_weight, deg):
+        """Run message passing for multiple hops.
+
+        Args:
+            embed (torch.Tensor): Node embeddings.
+            adj_sp_norm (torch.Tensor): Normalized adjacency (unused).
+            edge_index (torch.Tensor): Edge indices.
+            edge_weight (torch.Tensor): Edge weights.
+            deg (torch.Tensor): Node degrees (unused).
+
+        Returns:
+            tuple: (user_embs, item_embs) stacked by hop.
+        """
         agg_embed = embed
         embs = [embed]
 
@@ -33,6 +50,11 @@ class GraphConv(nn.Module):
 
 class LightGCN(nn.Module):
     def __init__(self, args):
+        """Initialize LightGCN model.
+
+        Args:
+            args (argparse.Namespace): Parsed arguments.
+        """
         super(LightGCN, self).__init__()
 
         self.args = args
@@ -41,15 +63,27 @@ class LightGCN(nn.Module):
         self.gcn = self._init_model()
 
     def _init_weight(self):
+        """Initialize ID embeddings."""
         initializer = nn.init.xavier_uniform_
         self.embeds = nn.Parameter(initializer(torch.empty(
             self.args.n_users + self.args.n_items, self.args.embedding_dim)))
 
     def _init_model(self):
+        """Construct the graph convolution module."""
         if self.args.model == 'LightGCN':
             return GraphConv(self.args)
 
     def batch_generate(self, user, pos_item, neg_item):
+        """Generate embeddings for a training batch.
+
+        Args:
+            user (torch.Tensor): User indices.
+            pos_item (torch.Tensor): Positive item indices.
+            neg_item (torch.Tensor): Negative item indices.
+
+        Returns:
+            tuple: (user_embs, pos_item_embs, neg_item_embs)
+        """
         user_gcn_embs, item_gcn_embs = self.gcn(
             self.embeds, self.adj_sp_norm, self.edge_index, self.edge_weight, self.deg)
 
@@ -63,6 +97,14 @@ class LightGCN(nn.Module):
         return user_embs, pos_item_embs, neg_item_embs
 
     def forward(self, batch=None):
+        """Forward pass for training.
+
+        Args:
+            batch (dict): Batch dictionary with users/items.
+
+        Returns:
+            tuple: Embeddings for loss computation.
+        """
         user = batch['users']
         pos_item = batch['pos_items']
         neg_item = batch['neg_items']
@@ -73,6 +115,14 @@ class LightGCN(nn.Module):
         return user_embs, pos_item_embs, neg_item_embs, self.embeds[user], self.embeds[pos_item], self.embeds[neg_item]
 
     def pooling(self, embeddings):
+        """Aggregate multi-hop embeddings.
+
+        Args:
+            embeddings (torch.Tensor): Stacked embeddings.
+
+        Returns:
+            torch.Tensor: Pooled embeddings.
+        """
         if self.args.aggr == 'mean':
             return embeddings.mean(dim=1)
         elif self.args.aggr == 'sum':
@@ -83,6 +133,11 @@ class LightGCN(nn.Module):
             return embeddings[:, -1, :]
 
     def generate(self):
+        """Generate pooled user and item embeddings.
+
+        Returns:
+            tuple: (user_embs, item_embs)
+        """
         user_gcn_embs, item_gcn_embs = self.gcn(
             self.embeds, self.adj_sp_norm, self.edge_index, self.edge_weight, self.deg)
 
@@ -92,10 +147,20 @@ class LightGCN(nn.Module):
         return user_embs, item_embs
 
     def generate_layers(self):
+        """Return per-hop embeddings."""
         return self.gcn(self.embeds, self.adj_sp_norm, self.edge_index, self.edge_weight, self.deg)
 
 class MLP(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, num_layer, dropout_prob):
+        """Initialize a simple MLP.
+
+        Args:
+            input_size (int): Input dimension.
+            hidden_size (int): Hidden dimension.
+            output_size (int): Output dimension.
+            num_layer (int): Number of layers.
+            dropout_prob (float): Dropout probability.
+        """
         super(MLP, self).__init__()
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_size, hidden_size))
@@ -106,6 +171,14 @@ class MLP(nn.Module):
         self.dropout = nn.Dropout(dropout_prob)
 
     def forward(self, x):
+        """Forward pass through the MLP.
+
+        Args:
+            x (torch.Tensor): Input features.
+
+        Returns:
+            torch.Tensor: Output features.
+        """
         for layer in self.layers[:-1]:
             x = self.relu(layer(x))
             x = self.dropout(x)
@@ -114,6 +187,11 @@ class MLP(nn.Module):
         
 class LightGCN_with_content(nn.Module):
     def __init__(self, args):
+        """Initialize LightGCN with content embeddings.
+
+        Args:
+            args (argparse.Namespace): Parsed arguments.
+        """
         super(LightGCN_with_content, self).__init__()
 
         self.args = args
@@ -138,10 +216,21 @@ class LightGCN_with_content(nn.Module):
         self.mlp = MLP(user_embs.shape[1], args.embedding_dim*2, args.embedding_dim, args.mlp_num_layer, args.mlp_dropout_prob)
 
     def _init_model(self):
+        """Construct the graph convolution module."""
         if self.args.model == 'LightGCN_with_content':
             return GraphConv(self.args)
 
     def batch_generate(self, user, pos_item, neg_item):
+        """Generate embeddings for a training batch.
+
+        Args:
+            user (torch.Tensor): User indices.
+            pos_item (torch.Tensor): Positive item indices.
+            neg_item (torch.Tensor): Negative item indices.
+
+        Returns:
+            tuple: (user_embs, pos_item_embs, neg_item_embs)
+        """
         self.embeds = self.mlp(self.user_item_embeds)
         user_gcn_embs, item_gcn_embs = self.gcn(
             self.embeds, self.adj_sp_norm, self.edge_index, self.edge_weight, self.deg)
@@ -156,6 +245,14 @@ class LightGCN_with_content(nn.Module):
         return user_embs, pos_item_embs, neg_item_embs
 
     def forward(self, batch=None):
+        """Forward pass for training.
+
+        Args:
+            batch (dict): Batch dictionary with users/items.
+
+        Returns:
+            tuple: Embeddings for loss computation.
+        """
         user = batch['users']
         pos_item = batch['pos_items']
         neg_item = batch['neg_items']
@@ -166,6 +263,14 @@ class LightGCN_with_content(nn.Module):
         return user_embs, pos_item_embs, neg_item_embs, self.embeds[user], self.embeds[pos_item], self.embeds[neg_item]
 
     def pooling(self, embeddings):
+        """Aggregate multi-hop embeddings.
+
+        Args:
+            embeddings (torch.Tensor): Stacked embeddings.
+
+        Returns:
+            torch.Tensor: Pooled embeddings.
+        """
         if self.args.aggr == 'mean':
             return embeddings.mean(dim=1)
         elif self.args.aggr == 'sum':
@@ -176,6 +281,11 @@ class LightGCN_with_content(nn.Module):
             return embeddings[:, -1, :]
 
     def generate(self):
+        """Generate pooled user and item embeddings.
+
+        Returns:
+            tuple: (user_embs, item_embs)
+        """
         self.embeds = self.mlp(self.user_item_embeds)
         user_gcn_embs, item_gcn_embs = self.gcn(
             self.embeds, self.adj_sp_norm, self.edge_index, self.edge_weight, self.deg)
@@ -188,6 +298,11 @@ class LightGCN_with_content(nn.Module):
 
 class LightGCN_with_content_id_add(nn.Module):
     def __init__(self, args):
+        """Initialize LightGCN with content + ID embedding addition.
+
+        Args:
+            args (argparse.Namespace): Parsed arguments.
+        """
         super(LightGCN_with_content_id_add, self).__init__()
 
         self.args = args
@@ -217,10 +332,21 @@ class LightGCN_with_content_id_add(nn.Module):
         
 
     def _init_model(self):
+        """Construct the graph convolution module."""
         if self.args.model == 'LightGCN_with_content_id_add':
             return GraphConv(self.args)
 
     def batch_generate(self, user, pos_item, neg_item):
+        """Generate embeddings for a training batch.
+
+        Args:
+            user (torch.Tensor): User indices.
+            pos_item (torch.Tensor): Positive item indices.
+            neg_item (torch.Tensor): Negative item indices.
+
+        Returns:
+            tuple: (user_embs, pos_item_embs, neg_item_embs)
+        """
         self.content_embeds = self.mlp1(self.user_item_embeds)
         self.embeds = self.content_embeds + self.id_embeds
         self.embeds = self.mlp2(self.embeds)
@@ -237,6 +363,14 @@ class LightGCN_with_content_id_add(nn.Module):
         return user_embs, pos_item_embs, neg_item_embs
 
     def forward(self, batch=None):
+        """Forward pass for training.
+
+        Args:
+            batch (dict): Batch dictionary with users/items.
+
+        Returns:
+            tuple: Embeddings for loss computation.
+        """
         user = batch['users']
         pos_item = batch['pos_items']
         neg_item = batch['neg_items']
@@ -247,6 +381,14 @@ class LightGCN_with_content_id_add(nn.Module):
         return user_embs, pos_item_embs, neg_item_embs, self.embeds[user], self.embeds[pos_item], self.embeds[neg_item]
 
     def pooling(self, embeddings):
+        """Aggregate multi-hop embeddings.
+
+        Args:
+            embeddings (torch.Tensor): Stacked embeddings.
+
+        Returns:
+            torch.Tensor: Pooled embeddings.
+        """
         if self.args.aggr == 'mean':
             return embeddings.mean(dim=1)
         elif self.args.aggr == 'sum':
@@ -257,6 +399,11 @@ class LightGCN_with_content_id_add(nn.Module):
             return embeddings[:, -1, :]
 
     def generate(self):
+        """Generate pooled user and item embeddings.
+
+        Returns:
+            tuple: (user_embs, item_embs)
+        """
         self.content_embeds = self.mlp1(self.user_item_embeds)
         self.embeds = self.content_embeds + self.id_embeds
         self.embeds = self.mlp2(self.embeds)
@@ -271,6 +418,11 @@ class LightGCN_with_content_id_add(nn.Module):
 
 class LightGCN_with_content_id_cat(nn.Module):
     def __init__(self, args):
+        """Initialize LightGCN with content + ID embedding concatenation.
+
+        Args:
+            args (argparse.Namespace): Parsed arguments.
+        """
         super(LightGCN_with_content_id_cat, self).__init__()
 
         self.args = args
@@ -300,10 +452,21 @@ class LightGCN_with_content_id_cat(nn.Module):
         
 
     def _init_model(self):
+        """Construct the graph convolution module."""
         if self.args.model == 'LightGCN_with_content_id_cat':
             return GraphConv(self.args)
 
     def batch_generate(self, user, pos_item, neg_item):
+        """Generate embeddings for a training batch.
+
+        Args:
+            user (torch.Tensor): User indices.
+            pos_item (torch.Tensor): Positive item indices.
+            neg_item (torch.Tensor): Negative item indices.
+
+        Returns:
+            tuple: (user_embs, pos_item_embs, neg_item_embs)
+        """
         self.content_embeds = self.mlp1(self.user_item_embeds)
         self.embeds = torch.cat([self.content_embeds, self.id_embeds], 1)
         self.embeds = self.mlp2(self.embeds)
@@ -320,6 +483,14 @@ class LightGCN_with_content_id_cat(nn.Module):
         return user_embs, pos_item_embs, neg_item_embs
 
     def forward(self, batch=None):
+        """Forward pass for training.
+
+        Args:
+            batch (dict): Batch dictionary with users/items.
+
+        Returns:
+            tuple: Embeddings for loss computation.
+        """
         user = batch['users']
         pos_item = batch['pos_items']
         neg_item = batch['neg_items']
@@ -330,6 +501,14 @@ class LightGCN_with_content_id_cat(nn.Module):
         return user_embs, pos_item_embs, neg_item_embs, self.embeds[user], self.embeds[pos_item], self.embeds[neg_item]
 
     def pooling(self, embeddings):
+        """Aggregate multi-hop embeddings.
+
+        Args:
+            embeddings (torch.Tensor): Stacked embeddings.
+
+        Returns:
+            torch.Tensor: Pooled embeddings.
+        """
         if self.args.aggr == 'mean':
             return embeddings.mean(dim=1)
         elif self.args.aggr == 'sum':
@@ -340,6 +519,11 @@ class LightGCN_with_content_id_cat(nn.Module):
             return embeddings[:, -1, :]
 
     def generate(self):
+        """Generate pooled user and item embeddings.
+
+        Returns:
+            tuple: (user_embs, item_embs)
+        """
         self.content_embeds = self.mlp1(self.user_item_embeds)
         self.embeds = torch.cat([self.content_embeds, self.id_embeds], 1)
         self.embeds = self.mlp2(self.embeds)
@@ -353,19 +537,40 @@ class LightGCN_with_content_id_cat(nn.Module):
 
 class MF(nn.Module):
     def __init__(self, args):
+        """Initialize matrix factorization model.
+
+        Args:
+            args (argparse.Namespace): Parsed arguments.
+        """
         super(MF, self).__init__()
         self.args = args
         self._init_weight()
 
     def _init_weight(self):
+        """Initialize ID embeddings."""
         initializer = nn.init.xavier_uniform_
         self.embeds = nn.Parameter(initializer(torch.empty(self.args.n_users + self.args.n_items, self.args.embedding_dim)))
 
     def generate(self):
+        """Return user and item embeddings.
+
+        Returns:
+            tuple: (user_embs, item_embs)
+        """
         user_embs, item_embs = self.embeds[:self.args.n_users,:], self.embeds[self.args.n_users:, :]
         return user_embs, item_embs
 
     def batch_generate(self, user, pos_item, neg_item):
+        """Generate embeddings for a training batch.
+
+        Args:
+            user (torch.Tensor): User indices.
+            pos_item (torch.Tensor): Positive item indices.
+            neg_item (torch.Tensor): Negative item indices.
+
+        Returns:
+            tuple: (user_embs, pos_item_embs, neg_item_embs)
+        """
         user_embs = self.embeds[user]
         pos_item_embs = self.embeds[pos_item]
         neg_item_embs = self.embeds[neg_item]
@@ -373,6 +578,14 @@ class MF(nn.Module):
         return user_embs, pos_item_embs, neg_item_embs
 
     def forward(self, batch):
+        """Forward pass for training.
+
+        Args:
+            batch (dict): Batch dictionary with users/items.
+
+        Returns:
+            tuple: Embeddings for loss computation.
+        """
         user = batch['users']
         pos_item = batch['pos_items']
         neg_item = batch['neg_items']  # [batch_size, n_negs * K]
